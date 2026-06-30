@@ -8,7 +8,7 @@ import { Link } from 'expo-router';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { coverImage } from '../lib/api';
-import { toFavorite, useFavorites } from '../lib/favorites';
+import { useLibrary } from '../lib/library';
 import { Anime } from '../lib/types';
 import { colors, font, radius, spacing } from '../constants/theme';
 import { ScoreBadge } from './ui';
@@ -16,18 +16,18 @@ import { ScoreBadge } from './ui';
 const BLUR_HASH = 'L6Pj0^jE.AyE_3t7t7R**0o#DgR4';
 
 function HeartButton({ anime, image }: { anime: Anime; image: string }) {
-  const { isFavorite, toggle } = useFavorites();
-  const active = isFavorite(anime.mal_id);
+  const { isSaved, toggleSave } = useLibrary();
+  const active = isSaved(anime.mal_id);
   return (
     <Pressable
       hitSlop={8}
-      onPress={() => toggle(toFavorite(anime, image))}
+      onPress={() => toggleSave(anime, image)}
       style={styles.heart}
     >
       <Ionicons
-        name={active ? 'heart' : 'heart-outline'}
+        name={active ? 'bookmark' : 'bookmark-outline'}
         size={16}
-        color={active ? colors.danger : colors.text}
+        color={active ? colors.primary : colors.text}
       />
     </Pressable>
   );

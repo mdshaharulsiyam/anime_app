@@ -40,7 +40,7 @@ export function AnimeCarousel({
       <View style={styles.headerRow}>
         <SectionHeader title={title} subtitle={subtitle} style={styles.header} />
         {categoryKey ? (
-          <Link href={`/list/${categoryKey}`} asChild>
+          <Link href={{ pathname: '/list/[category]', params: { category: categoryKey } }} asChild>
             <Pressable hitSlop={8} style={styles.viewAll}>
               <Text style={styles.viewAllText}>View all</Text>
               <Ionicons name="chevron-forward" size={14} color={colors.primary} />

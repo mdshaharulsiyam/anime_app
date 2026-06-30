@@ -4,11 +4,19 @@ A full anime-discovery mobile app built with **Expo (SDK 56)** + **expo-router**
 
 ## Features
 
-- **Discover** — featured airing carousel + "Top Ranked", "Most Popular" and "Coming Soon" rails.
-- **Seasonal** — paginated, infinite-scroll grid of the current season and upcoming anime.
+It's a **tracker**, not just a catalog — the reason people keep apps like MyAnimeList / AniList installed:
+
+- **My List tracker** — save any anime and set a watch status (Watching / Plan to Watch / Completed / On Hold / Dropped). Filter chips with live counts.
+- **Episode progress + "+1" button** — log finished episodes with one tap; a progress bar fills and the show auto-completes when you reach the final episode.
+- **Live airing countdown** — for ongoing shows, a ticking "Next episode airs in 3h 12m", computed from Jikan's JST broadcast slot.
+- **Watch Now smart-redirect** — one tap jumps to a Crunchyroll / YouTube / Google search for the exact title (the app is a launcher, it doesn't host video).
+
+Plus browsing:
+
+- **Discover** — featured airing carousel + five rails (Top Ranked, Most Popular, Currently Airing, Most Favorited, Coming Soon), each with **View all** → full infinite-scroll list.
+- **Seasonal** — paginated grid of the current season and upcoming anime.
 - **Search** — debounced title search with quick genre filters and infinite scroll.
-- **Anime details** — backdrop, poster, score/rank, stats, genres, expandable synopsis, full info table, character cast, and fan recommendations. Deep links to the trailer and MyAnimeList.
-- **Favorites** — save any anime with the heart button; persisted locally with AsyncStorage and reactive across every screen.
+- **Anime details** — backdrop, score/rank, stats, genres, expandable synopsis, info table, character cast, and fan recommendations, with trailer + MyAnimeList links.
 - Dark, streaming-app UI with `expo-image` (blurhash placeholders) and a custom design-token theme.
 
 ## Tech

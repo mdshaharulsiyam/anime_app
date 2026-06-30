@@ -16,7 +16,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ErrorState, Loading, Pill, ScoreBadge, SectionHeader } from '../../components/ui';
 import { colors, font, radius, spacing } from '../../constants/theme';
 import { coverImage, jikan } from '../../lib/api';
-import { toFavorite, useFavorites } from '../../lib/favorites';
+import { useCountdown } from '../../lib/airing';
+import {
+  STATUS_META,
+  STATUS_ORDER,
+  WatchStatus,
+  toEntry,
+  useLibrary,
+} from '../../lib/library';
+import { streamingLinks } from '../../lib/streaming';
+import { Anime } from '../../lib/types';
 import { useAsync } from '../../lib/hooks';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -41,12 +50,133 @@ function fmtCount(n: number | null): string {
   return String(n);
 }
 
+/** Smart-redirect buttons to streaming search pages. */
+function WatchNow({ title }: { title: string }) {
+  const links = streamingLinks(title);
+  return (
+    <View style={styles.block}>
+      <SectionHeader title="Watch now" subtitle="Jump to where it streams" />
+      <View style={styles.watchRow}>
+        {links.map((l) => (
+          <Pressable key={l.key} style={styles.watchBtn} onPress={() => Linking.openURL(l.url)}>
+            <Ionicons name={l.icon as keyof typeof Ionicons.glyphMap} size={18} color={l.color} />
+            <Text style={styles.watchText} numberOfLines={1}>
+              {l.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** Add-to-list CTA, status selector and the episode "+1" stepper. */
+function TrackerPanel({ anime, image }: { anime: Anime; image: string }) {
+  const { getEntry, add, remove, setStatus, increment, decrement } = useLibrary();
+  const entry = getEntry(anime.mal_id);
+
+  if (!entry) {
+    return (
+      <View style={styles.block}>
+        <Pressable style={styles.addBtn} onPress={() => add(anime, image, 'plan')}>
+          <Ionicons name="add-circle" size={20} color={colors.text} />
+          <Text style={styles.addBtnText}>Add to My List</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const total = anime.episodes && anime.episodes > 0 ? anime.episodes : null;
+  const pct = total ? Math.min(100, (entry.progress / total) * 100) : 0;
+  const atMax = total ? entry.progress >= total : false;
+
+  return (
+    <View style={styles.block}>
+      <View style={styles.trackerCard}>
+        <View style={styles.statusChips}>
+          {STATUS_ORDER.map((s) => {
+            const m = STATUS_META[s];
+            const active = entry.status === s;
+            return (
+              <Pressable
+                key={s}
+                onPress={() => setStatus(anime.mal_id, s as WatchStatus)}
+                style={[styles.statusChip, active && { backgroundColor: m.color, borderColor: m.color }]}
+              >
+                <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                  {m.short}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.progressHeader}>
+          <Text style={styles.progressTitle}>Episode progress</Text>
+          <Text style={styles.progressCount}>
+            {entry.progress}
+            {total ? ` / ${total}` : ''}
+          </Text>
+        </View>
+        <View style={styles.trackProgress}>
+          <View style={[styles.trackFill, { width: `${pct}%` }]} />
+        </View>
+
+        <View style={styles.stepperRow}>
+          <Pressable
+            style={styles.stepBtn}
+            onPress={() => decrement(anime.mal_id)}
+            disabled={entry.progress <= 0}
+          >
+            <Ionicons name="remove" size={20} color={entry.progress <= 0 ? colors.textFaint : colors.text} />
+          </Pressable>
+          <Pressable
+            style={[styles.plus1, atMax && styles.plus1Disabled]}
+            onPress={() => increment(anime.mal_id)}
+            disabled={atMax}
+          >
+            <Ionicons name={atMax ? 'checkmark' : 'add'} size={20} color={colors.text} />
+            <Text style={styles.plus1Text}>{atMax ? 'Completed' : '+1 Episode'}</Text>
+          </Pressable>
+          <Pressable style={styles.stepBtn} onPress={() => remove(anime.mal_id)}>
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Live "next episode airs in …" card for ongoing shows. */
+function CountdownCard({ anime }: { anime: Anime }) {
+  const countdown = useCountdown(anime.broadcast);
+  if (!anime.airing || !countdown) return null;
+  return (
+    <View style={styles.block}>
+      <View style={styles.countdownCard}>
+        <View style={styles.countdownIcon}>
+          <Ionicons name="time" size={22} color={colors.accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.countdownLabel}>Next episode airs in</Text>
+          <Text style={styles.countdownValue}>{countdown}</Text>
+        </View>
+        {anime.broadcast?.string ? (
+          <Text style={styles.countdownSlot} numberOfLines={2}>
+            {anime.broadcast.string}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 export default function AnimeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const animeId = Number(id);
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isFavorite, toggle } = useFavorites();
+  const { isSaved, toggleSave } = useLibrary();
   const [expanded, setExpanded] = useState(false);
 
   const { data, loading, error, reload } = useAsync(() => jikan.animeFull(animeId), [animeId]);
@@ -58,7 +188,7 @@ export default function AnimeDetailScreen() {
 
   const anime = data.data;
   const image = coverImage(anime.images);
-  const fav = isFavorite(anime.mal_id);
+  const saved = isSaved(anime.mal_id);
   const characters = (chars?.data ?? []).filter((c) => c.role === 'Main' || c.role === 'Supporting').slice(0, 15);
   const recommendations = (recs?.data ?? []).slice(0, 12);
 
@@ -72,12 +202,12 @@ export default function AnimeDetailScreen() {
         <Pressable
           style={styles.circleBtn}
           hitSlop={8}
-          onPress={() => toggle(toFavorite(anime, image))}
+          onPress={() => toggleSave(anime, image)}
         >
           <Ionicons
-            name={fav ? 'heart' : 'heart-outline'}
+            name={saved ? 'bookmark' : 'bookmark-outline'}
             size={22}
-            color={fav ? colors.danger : colors.text}
+            color={saved ? colors.primary : colors.text}
           />
         </Pressable>
       </View>
@@ -110,6 +240,15 @@ export default function AnimeDetailScreen() {
             </View>
           </View>
         </View>
+
+        {/* Watch now — smart redirect to where it streams */}
+        <WatchNow title={anime.title_english || anime.title} />
+
+        {/* Personal tracker: status + episode progress */}
+        <TrackerPanel anime={anime} image={image} />
+
+        {/* Live airing countdown for ongoing shows */}
+        <CountdownCard anime={anime} />
 
         {/* Trailer / MAL actions */}
         <View style={styles.actions}>
@@ -348,6 +487,105 @@ const styles = StyleSheet.create({
   statValue: { color: colors.text, fontSize: font.size.sm, fontWeight: font.weight.bold },
   statLabel: { color: colors.textFaint, fontSize: 10, fontWeight: font.weight.semibold },
   block: { paddingHorizontal: spacing.lg, marginTop: spacing.lg },
+  // Watch now
+  watchRow: { flexDirection: 'row', gap: spacing.sm },
+  watchBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 46,
+    paddingHorizontal: 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  watchText: { color: colors.text, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  // Tracker
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 50,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  addBtnText: { color: colors.text, fontSize: font.size.md, fontWeight: font.weight.bold },
+  trackerCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  statusChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  statusChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.cardAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statusChipText: { color: colors.textMuted, fontSize: font.size.xs, fontWeight: font.weight.bold },
+  statusChipTextActive: { color: '#0B1020' },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  progressTitle: { color: colors.textMuted, fontSize: font.size.sm, fontWeight: font.weight.semibold },
+  progressCount: { color: colors.text, fontSize: font.size.md, fontWeight: font.weight.bold },
+  trackProgress: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: colors.cardAlt,
+    overflow: 'hidden',
+  },
+  trackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.primary },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  stepBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: colors.cardAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plus1: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  plus1Disabled: { backgroundColor: colors.success },
+  plus1Text: { color: colors.text, fontSize: font.size.md, fontWeight: font.weight.bold },
+  // Countdown
+  countdownCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    padding: spacing.lg,
+  },
+  countdownIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(52,214,200,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownLabel: { color: colors.textMuted, fontSize: font.size.xs, fontWeight: font.weight.semibold },
+  countdownValue: { color: colors.text, fontSize: font.size.lg, fontWeight: font.weight.heavy },
+  countdownSlot: { color: colors.textFaint, fontSize: 10, maxWidth: 96, textAlign: 'right' },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   synopsis: { color: colors.textMuted, fontSize: font.size.sm, lineHeight: 22 },
   readMore: { color: colors.primary, fontWeight: font.weight.bold, marginTop: spacing.sm, fontSize: font.size.sm },

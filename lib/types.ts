@@ -43,6 +43,12 @@ export interface Anime {
   studios: NamedEntity[];
   trailer?: { youtube_id: string | null; url: string | null };
   aired?: { from: string | null; to: string | null; string: string | null };
+  broadcast?: {
+    day: string | null;
+    time: string | null;
+    timezone: string | null;
+    string: string | null;
+  };
 }
 
 export interface CharacterEntry {
