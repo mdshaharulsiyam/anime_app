@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "AniJikan",
+    "name": "Shiori",
     "slug": "jikan-anime-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "anijikan",
+    "scheme": "Shiori",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true

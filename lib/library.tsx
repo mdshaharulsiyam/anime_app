@@ -53,8 +53,8 @@ export const STATUS_META: Record<
   dropped: { label: 'Dropped', short: 'Dropped', icon: 'close-circle', color: '#FF5C7A' },
 };
 
-const STORAGE_KEY = 'anijikan:library:v1';
-const LEGACY_FAV_KEY = 'anijikan:favorites:v1';
+const STORAGE_KEY = 'Shiori:library:v1';
+const LEGACY_FAV_KEY = 'Shiori:favorites:v1';
 
 export function toEntry(
   anime: Anime,

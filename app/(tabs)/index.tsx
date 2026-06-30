@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
-import React from 'react';
 import {
   Dimensions,
   FlatList,
@@ -105,7 +104,7 @@ export default function DiscoverScreen() {
       <View style={styles.topBar}>
         <View>
           <Text style={styles.brand}>
-            Ani<Text style={{ color: colors.primary }}>Jikan</Text>
+            Shiori<Text style={{ color: colors.primary }}> Anime</Text>
           </Text>
           <Text style={styles.brandSub}>Powered by MyAnimeList · Jikan API</Text>
         </View>

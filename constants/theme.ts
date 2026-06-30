@@ -1,5 +1,5 @@
 /**
- * Central design tokens for AniJikan.
+ * Central design tokens for Shiori.
  * Dark, "anime streaming app" aesthetic with an indigo/violet accent.
  */
 export const colors = {
