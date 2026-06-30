@@ -5,17 +5,16 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "Shiori",
-    "userInterfaceStyle": "automatic",
+    "scheme": "shiori",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0B1020",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/adaptive-icon.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -26,7 +25,20 @@
     "plugins": [
       "expo-router",
       "expo-image",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#000000"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
