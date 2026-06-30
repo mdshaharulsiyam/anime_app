@@ -106,7 +106,7 @@ export default function DiscoverScreen() {
           <Text style={styles.brand}>
             Shiori<Text style={{ color: colors.primary }}> Anime</Text>
           </Text>
-          <Text style={styles.brandSub}>Powered by MyAnimeList · Jikan API</Text>
+          {/* <Text style={styles.brandSub}>Powered by MyAnimeList · Jikan API</Text> */}
         </View>
         <Link href="/search" asChild>
           <Pressable style={styles.searchBtn} hitSlop={8}>
