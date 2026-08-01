@@ -13,7 +13,8 @@ import {
   Recommendation,
 } from './types';
 
-const BASE_URL = 'https://api.jikan.moe/v4';
+// const BASE_URL = 'https://api.jikan.moe/v4';
+const BASE_URL = 'https://api.tenrai.org/v1';
 const MIN_GAP_MS = 400; // spacing between outgoing requests
 const MAX_RETRIES = 3;
 
