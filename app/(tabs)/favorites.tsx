@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -18,7 +19,7 @@ type Filter = WatchStatus | 'all';
 
 export default function MyListScreen() {
   const insets = useSafeAreaInsets();
-  const { entries, counts, clear } = useLibrary();
+  const { entries, counts, username, switchUser, loading, error, refreshList } = useLibrary();
   const [filter, setFilter] = useState<Filter>('watching');
 
   const visible = useMemo(() => {
@@ -26,11 +27,16 @@ export default function MyListScreen() {
     return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
   }, [entries, filter]);
 
-  const confirmClear = () =>
-    Alert.alert('Clear list?', 'This removes every tracked anime.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: clear },
-    ]);
+  const confirmSwitchUser = () => {
+    Alert.alert(
+      'Switch User',
+      `Are you sure you want to log out @${username || 'user'} on this device?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Switch / Logout', style: 'destructive', onPress: switchUser },
+      ]
+    );
+  };
 
   const filters: { key: Filter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: entries.length },
@@ -44,18 +50,44 @@ export default function MyListScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.headerWrap}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.title}>My List</Text>
           <Text style={styles.subtitle}>
             {entries.length} tracked · {counts.watching} watching
           </Text>
         </View>
-        {entries.length > 0 ? (
-          <Pressable onPress={confirmClear} style={styles.clearBtn} hitSlop={8}>
-            <Ionicons name="trash-outline" size={18} color={colors.danger} />
-          </Pressable>
+
+        {username ? (
+          <View style={styles.userActions}>
+            <View style={styles.userBadge}>
+              <Ionicons name="person-circle-outline" size={16} color={colors.primary} />
+              <Text style={styles.userBadgeText} numberOfLines={1}>
+                @{username}
+              </Text>
+            </View>
+            <Pressable
+              onPress={confirmSwitchUser}
+              style={styles.switchUserBtn}
+              hitSlop={8}
+              accessibilityLabel="Switch User"
+            >
+              <Ionicons name="log-out-outline" size={18} color={colors.textMuted} />
+            </Pressable>
+          </View>
         ) : null}
       </View>
+
+      {error ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+          <Text style={styles.errorBannerText} numberOfLines={1}>
+            {error}
+          </Text>
+          <Pressable onPress={refreshList} style={styles.retryBtn}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View>
         <FlatList
@@ -85,7 +117,12 @@ export default function MyListScreen() {
         />
       </View>
 
-      {entries.length === 0 ? (
+      {loading && entries.length === 0 ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Fetching your anime list...</Text>
+        </View>
+      ) : entries.length === 0 ? (
         <EmptyState
           icon="bookmarks-outline"
           title="Your list is empty"
@@ -120,15 +157,76 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.text, fontSize: font.size.xxl, fontWeight: font.weight.heavy },
   subtitle: { color: colors.textMuted, fontSize: font.size.sm, marginTop: 2 },
-  clearBtn: {
-    width: 40,
-    height: 40,
+  userActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.card,
+    borderColor: colors.border,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    maxWidth: 140,
+  },
+  userBadgeText: {
+    color: colors.text,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.bold,
+  },
+  switchUserBtn: {
+    width: 36,
+    height: 36,
     borderRadius: radius.pill,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255, 92, 122, 0.15)',
+    borderColor: colors.danger,
+    borderWidth: 1,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: colors.danger,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.semibold,
+  },
+  retryBtn: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  retryBtnText: {
+    color: colors.danger,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.bold,
+    textDecorationLine: 'underline',
+  },
+  loadingBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: font.size.sm,
   },
   filterRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   chip: {

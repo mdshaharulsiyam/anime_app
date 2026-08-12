@@ -1,10 +1,6 @@
-/**
- * Thin client for the Jikan v4 API with a built-in request throttle.
- *
- * Jikan is rate limited (~3 requests/second, 60/minute). To stay friendly we
- * serialize requests through a small queue that enforces a minimum gap between
- * calls and transparently retries on HTTP 429 (Too Many Requests).
- */
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import { LibraryEntry, WatchStatus } from './library';
 import {
   Anime,
   CharacterEntry,
@@ -13,7 +9,11 @@ import {
   Recommendation,
 } from './types';
 
-const BASE_URL = 'https://api.jikan.moe/v4';
+// ==========================================
+// 1. Jikan API v4 Client & Throttling
+// ==========================================
+// const BASE_URL = 'https://api.jikan.moe/v4';
+const BASE_URL = 'https://api.tenrai.org/v1';
 const MIN_GAP_MS = 400; // spacing between outgoing requests
 const MAX_RETRIES = 3;
 
@@ -125,4 +125,173 @@ export function coverImage(images: Anime['images']): string {
     images?.jpg?.image_url ||
     ''
   );
+}
+
+// ==========================================
+// 2. Express API Backend Client
+// ==========================================
+const getBaseUrl = (): string => {
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+
+  // 1. If explicit env URL set and doesn't point to localhost/127.0.0.1, use it directly
+  if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+    return envUrl;
+  }
+
+  // 2. Extract host IP dynamically from Expo Metro manifest (e.g. Expo Go on physical device)
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (hostUri) {
+    const hostIp = hostUri.split(':')[0];
+    if (hostIp) {
+      return `http://${hostIp}:5000/api`;
+    }
+  }
+
+  // 3. Fallbacks
+  if (Platform.OS === 'android') {
+    return 'http://10.10.28.173:5000/api';
+  }
+  return 'http://localhost:5000/api';
+};
+
+export const getApiBaseUrl = getBaseUrl;
+
+export interface BackendAnimeItem {
+  _id?: string;
+  user?: string;
+  animeId: string;
+  title: string;
+  coverImage?: string;
+  status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
+  episodesWatched: number;
+  score?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UserResponse {
+  _id: string;
+  username: string;
+  createdAt: string;
+}
+
+/**
+ * Map frontend WatchStatus to backend status enum
+ */
+export function toBackendStatus(status: WatchStatus): BackendAnimeItem['status'] {
+  if (status === 'plan') return 'plan_to_watch';
+  return status as BackendAnimeItem['status'];
+}
+
+/**
+ * Map backend status enum to frontend WatchStatus
+ */
+export function toFrontendStatus(status: string): WatchStatus {
+  if (status === 'plan_to_watch') return 'plan';
+  if (['watching', 'completed', 'plan', 'on_hold', 'dropped'].includes(status)) {
+    return status as WatchStatus;
+  }
+  return 'watching';
+}
+
+/**
+ * Convert backend anime item to local LibraryEntry
+ */
+export function toLibraryEntry(item: BackendAnimeItem): LibraryEntry {
+  return {
+    mal_id: Number(item.animeId),
+    title: item.title,
+    image: item.coverImage || '',
+    score: item.score ?? null,
+    type: 'Anime',
+    year: null,
+    episodes: null,
+    airing: false,
+    broadcast: null,
+    status: toFrontendStatus(item.status),
+    progress: item.episodesWatched || 0,
+    updatedAt: item.updatedAt ? new Date(item.updatedAt).getTime() : Date.now(),
+  };
+}
+
+/**
+ * POST /api/users/login-or-register
+ */
+export async function loginOrRegisterUser(username: string): Promise<UserResponse> {
+  const response = await fetch(`${getApiBaseUrl()}/users/login-or-register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: username.trim() }),
+  });
+
+  const json = await response.json();
+
+  if (!response.ok || !json.success) {
+    throw new Error(json.message || 'Failed to authenticate user');
+  }
+
+  return json.data;
+}
+
+/**
+ * GET /api/anime/:username
+ */
+export async function fetchUserAnimeList(username: string): Promise<LibraryEntry[]> {
+  const response = await fetch(`${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}`);
+  const json = await response.json();
+
+  if (!response.ok || !json.success) {
+    throw new Error(json.message || 'Failed to fetch anime list');
+  }
+
+  return (json.data as BackendAnimeItem[]).map(toLibraryEntry);
+}
+
+/**
+ * POST /api/anime/:username
+ */
+export async function upsertAnime(
+  username: string,
+  entry: Partial<LibraryEntry> & { mal_id: number; title: string }
+): Promise<BackendAnimeItem> {
+  const payload = {
+    animeId: String(entry.mal_id),
+    title: entry.title,
+    coverImage: entry.image || '',
+    status: toBackendStatus(entry.status || 'plan'),
+    episodesWatched: entry.progress ?? 0,
+    score: entry.score ?? null,
+  };
+
+  const response = await fetch(`${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const json = await response.json();
+
+  if (!response.ok || !json.success) {
+    throw new Error(json.message || 'Failed to save anime entry');
+  }
+
+  return json.data;
+}
+
+/**
+ * DELETE /api/anime/:username/:animeId
+ */
+export async function deleteAnime(username: string, animeId: number | string): Promise<void> {
+  const response = await fetch(
+    `${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}/${encodeURIComponent(String(animeId))}`,
+    {
+      method: 'DELETE',
+    }
+  );
+
+  const json = await response.json();
+
+  if (!response.ok || !json.success) {
+    throw new Error(json.message || 'Failed to delete anime entry');
+  }
 }

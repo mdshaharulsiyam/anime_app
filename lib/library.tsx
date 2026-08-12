@@ -1,10 +1,6 @@
 /**
  * The user's personal tracking library: a saved list of anime, each with a
- * watch status and episode progress. Persisted to AsyncStorage and exposed via
- * context so every screen (cards, detail, My List) stays in sync.
- *
- * This supersedes the old "favorites" store; existing favorites are migrated in
- * automatically as "Plan to Watch".
+ * watch status and episode progress. Connected to the Express backend API.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {
@@ -15,6 +11,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { deleteAnime, fetchUserAnimeList, upsertAnime } from './api';
 import { Anime } from './types';
 
 export type WatchStatus = 'watching' | 'plan' | 'completed' | 'on_hold' | 'dropped';
@@ -53,8 +50,7 @@ export const STATUS_META: Record<
   dropped: { label: 'Dropped', short: 'Dropped', icon: 'close-circle', color: '#FF5C7A' },
 };
 
-const STORAGE_KEY = 'Shiori:library:v1';
-const LEGACY_FAV_KEY = 'Shiori:favorites:v1';
+const USERNAME_KEY = 'Shiori:username:v1';
 
 export function toEntry(
   anime: Anime,
@@ -81,12 +77,18 @@ export function toEntry(
 
 interface LibraryContextValue {
   entries: LibraryEntry[];
+  username: string | null;
   ready: boolean;
+  loading: boolean;
+  error: string | null;
   isSaved: (id: number) => boolean;
   getEntry: (id: number) => LibraryEntry | undefined;
   byStatus: (status: WatchStatus) => LibraryEntry[];
   counts: Record<WatchStatus, number>;
-  /** Add (as Plan to Watch) if missing, else remove. Returns the new saved state. */
+  saveUsername: (name: string) => Promise<void>;
+  switchUser: () => Promise<void>;
+  refreshList: () => Promise<void>;
+  /** Add (as Plan to Watch) if missing, else remove. */
   toggleSave: (anime: Anime, image: string) => void;
   /** Ensure the anime is saved, optionally with a starting status. */
   add: (anime: Anime, image: string, status?: WatchStatus) => void;
@@ -107,58 +109,90 @@ function clampProgress(entry: LibraryEntry, value: number): number {
 
 export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
+  const [username, setUsername] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // Load user's anime list from backend
+  const loadUserAnime = useCallback(async (activeUsername: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await fetchUserAnimeList(activeUsername);
+      setEntries(list);
+    } catch (err: any) {
+      console.error('[LibraryProvider Error] Failed fetching user anime:', err);
+      setError(err.message || 'Failed to load anime list');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Initialize username on startup
   useEffect(() => {
     (async () => {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          setEntries(JSON.parse(raw));
-        } else {
-          // One-time migration from the legacy favorites store.
-          const legacy = await AsyncStorage.getItem(LEGACY_FAV_KEY);
-          if (legacy) {
-            const favs = JSON.parse(legacy) as Array<Partial<LibraryEntry>>;
-            const migrated: LibraryEntry[] = favs.map((f) => ({
-              mal_id: f.mal_id!,
-              title: f.title || 'Untitled',
-              image: f.image || '',
-              score: f.score ?? null,
-              type: f.type ?? null,
-              year: f.year ?? null,
-              episodes: f.episodes ?? null,
-              airing: false,
-              broadcast: null,
-              status: 'plan',
-              progress: 0,
-              updatedAt: Date.now(),
-            }));
-            setEntries(migrated);
-          }
+        const savedName = await AsyncStorage.getItem(USERNAME_KEY);
+        if (savedName) {
+          setUsername(savedName);
+          await loadUserAnime(savedName);
         }
-      } catch {
-        // start fresh on corrupt storage
+      } catch (err) {
+        console.warn('Error reading stored username:', err);
       } finally {
         setReady(true);
       }
     })();
+  }, [loadUserAnime]);
+
+  // Save new username locally and load list
+  const saveUsername = useCallback(
+    async (name: string) => {
+      const trimmed = name.trim().toLowerCase();
+      setUsername(trimmed);
+      await AsyncStorage.setItem(USERNAME_KEY, trimmed);
+      await loadUserAnime(trimmed);
+    },
+    [loadUserAnime]
+  );
+
+  // Logout / Switch User
+  const switchUser = useCallback(async () => {
+    await AsyncStorage.removeItem(USERNAME_KEY);
+    setUsername(null);
+    setEntries([]);
+    setError(null);
   }, []);
 
-  const persist = useCallback((next: LibraryEntry[]) => {
-    setEntries(next);
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
-  }, []);
+  const refreshList = useCallback(async () => {
+    if (username) {
+      await loadUserAnime(username);
+    }
+  }, [username, loadUserAnime]);
 
-  const update = useCallback(
-    (id: number, mutate: (e: LibraryEntry) => LibraryEntry) => {
-      setEntries((prev) => {
-        const next = prev.map((e) => (e.mal_id === id ? { ...mutate(e), updatedAt: Date.now() } : e));
-        AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
-        return next;
+  // Async helper to sync entry mutation to server
+  const syncUpsert = useCallback(
+    (entry: LibraryEntry) => {
+      if (!username) return;
+      upsertAnime(username, entry).catch((err) => {
+        console.error('[Sync Error] Failed to update anime:', err);
+        setError('Syncing change to server failed. Retrying...');
       });
     },
-    [],
+    [username]
+  );
+
+  // Async helper to sync entry deletion to server
+  const syncDelete = useCallback(
+    (animeId: number) => {
+      if (!username) return;
+      deleteAnime(username, animeId).catch((err) => {
+        console.error('[Sync Error] Failed to delete anime:', err);
+        setError('Deleting item from server failed.');
+      });
+    },
+    [username]
   );
 
   const isSaved = useCallback((id: number) => entries.some((e) => e.mal_id === id), [entries]);
@@ -178,82 +212,125 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       on_hold: 0,
       dropped: 0,
     };
-    for (const e of entries) c[e.status] += 1;
+    for (const e of entries) {
+      if (c[e.status] !== undefined) {
+        c[e.status] += 1;
+      }
+    }
     return c;
   }, [entries]);
 
   const add = useCallback(
     (anime: Anime, image: string, status: WatchStatus = 'plan') => {
-      if (entries.some((e) => e.mal_id === anime.mal_id)) {
-        update(anime.mal_id, (e) => ({ ...e, status }));
+      const existing = entries.find((e) => e.mal_id === anime.mal_id);
+      if (existing) {
+        const updated = { ...existing, status, updatedAt: Date.now() };
+        setEntries((prev) => prev.map((e) => (e.mal_id === anime.mal_id ? updated : e)));
+        syncUpsert(updated);
       } else {
-        persist([toEntry(anime, image, status), ...entries]);
+        const newEntry = toEntry(anime, image, status);
+        setEntries((prev) => [newEntry, ...prev]);
+        syncUpsert(newEntry);
       }
     },
-    [entries, persist, update],
+    [entries, syncUpsert],
   );
 
   const toggleSave = useCallback(
     (anime: Anime, image: string) => {
       if (entries.some((e) => e.mal_id === anime.mal_id)) {
-        persist(entries.filter((e) => e.mal_id !== anime.mal_id));
+        setEntries((prev) => prev.filter((e) => e.mal_id !== anime.mal_id));
+        syncDelete(anime.mal_id);
       } else {
-        persist([toEntry(anime, image, 'plan'), ...entries]);
+        const newEntry = toEntry(anime, image, 'plan');
+        setEntries((prev) => [newEntry, ...prev]);
+        syncUpsert(newEntry);
       }
     },
-    [entries, persist],
+    [entries, syncDelete, syncUpsert],
   );
 
   const remove = useCallback(
-    (id: number) => persist(entries.filter((e) => e.mal_id !== id)),
-    [entries, persist],
+    (id: number) => {
+      setEntries((prev) => prev.filter((e) => e.mal_id !== id));
+      syncDelete(id);
+    },
+    [syncDelete],
+  );
+
+  const updateEntry = useCallback(
+    (id: number, mutate: (e: LibraryEntry) => LibraryEntry) => {
+      let target: LibraryEntry | null = null;
+      setEntries((prev) =>
+        prev.map((e) => {
+          if (e.mal_id === id) {
+            target = { ...mutate(e), updatedAt: Date.now() };
+            return target;
+          }
+          return e;
+        })
+      );
+      if (target) {
+        syncUpsert(target);
+      }
+    },
+    [syncUpsert]
   );
 
   const setStatus = useCallback(
     (id: number, status: WatchStatus) =>
-      update(id, (e) => {
+      updateEntry(id, (e) => {
         let progress = e.progress;
         if (status === 'completed' && e.episodes) progress = e.episodes;
         return { ...e, status, progress };
       }),
-    [update],
+    [updateEntry],
   );
 
   const setProgress = useCallback(
     (id: number, progress: number) =>
-      update(id, (e) => {
+      updateEntry(id, (e) => {
         const p = clampProgress(e, progress);
         const status =
           e.episodes && p >= e.episodes ? 'completed' : e.status === 'plan' ? 'watching' : e.status;
         return { ...e, progress: p, status };
       }),
-    [update],
+    [updateEntry],
   );
 
   const increment = useCallback(
-    (id: number) => update(id, (e) => {
+    (id: number) => updateEntry(id, (e) => {
       const p = clampProgress(e, e.progress + 1);
       const status = e.episodes && p >= e.episodes ? 'completed' : e.status === 'plan' || e.status === 'on_hold' ? 'watching' : e.status;
       return { ...e, progress: p, status };
     }),
-    [update],
+    [updateEntry],
   );
 
   const decrement = useCallback(
-    (id: number) => update(id, (e) => ({ ...e, progress: clampProgress(e, e.progress - 1) })),
-    [update],
+    (id: number) => updateEntry(id, (e) => ({ ...e, progress: clampProgress(e, e.progress - 1) })),
+    [updateEntry],
   );
 
-  const clear = useCallback(() => persist([]), [persist]);
+  const clear = useCallback(() => {
+    entries.forEach((e) => syncDelete(e.mal_id));
+    setEntries([]);
+  }, [entries, syncDelete]);
 
   const value = useMemo(
     () => ({
       entries,
+      username,
       ready,
+      loading,
+      error,
       isSaved,
       getEntry,
       byStatus,
       counts,
+      saveUsername,
+      switchUser,
+      refreshList,
       toggleSave,
       add,
       remove,
@@ -263,7 +340,28 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       decrement,
       clear,
     }),
-    [entries, ready, isSaved, getEntry, byStatus, counts, toggleSave, add, remove, setStatus, setProgress, increment, decrement, clear],
+    [
+      entries,
+      username,
+      ready,
+      loading,
+      error,
+      isSaved,
+      getEntry,
+      byStatus,
+      counts,
+      saveUsername,
+      switchUser,
+      refreshList,
+      toggleSave,
+      add,
+      remove,
+      setStatus,
+      setProgress,
+      increment,
+      decrement,
+      clear,
+    ],
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
