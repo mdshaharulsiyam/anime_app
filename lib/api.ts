@@ -146,7 +146,7 @@ export class OutdatedVersionError extends Error {
 }
 
 const getBaseUrl = (): string => {
-  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL || "https://anime-app-zeta-bice.vercel.app/";
 
   // 1. If explicit env URL set and doesn't point to localhost/127.0.0.1, use it directly
   if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
@@ -164,9 +164,9 @@ const getBaseUrl = (): string => {
 
   // 3. Fallbacks
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000/api';
+    return 'https://anime-app-zeta-bice.vercel.app/api';
   }
-  return 'http://localhost:5000/api';
+  return 'https://anime-app-zeta-bice.vercel.app/api';
 };
 
 export const getApiBaseUrl = getBaseUrl;
