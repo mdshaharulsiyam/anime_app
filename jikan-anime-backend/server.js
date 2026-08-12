@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import userRoutes from './routes/userRoutes.js';
 import animeRoutes from './routes/animeRoutes.js';
+import { checkVersion } from './middleware/versionCheck.js';
 import { notFound, errorHandler } from './middleware/errorHandler.js';
 
 // Load environment variables
@@ -18,7 +19,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Base API Health Check Route
+// Base API Health Check Route (Bypasses Version Check)
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -26,6 +27,9 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Version Check Middleware for API Endpoints
+app.use('/api', checkVersion);
 
 // API Routes
 app.use('/api/users', userRoutes);

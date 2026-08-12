@@ -12,7 +12,6 @@ import {
 // ==========================================
 // 1. Jikan API v4 Client & Throttling
 // ==========================================
-// const BASE_URL = 'https://api.jikan.moe/v4';
 const BASE_URL = 'https://api.tenrai.org/v1';
 const MIN_GAP_MS = 400; // spacing between outgoing requests
 const MAX_RETRIES = 3;
@@ -128,8 +127,24 @@ export function coverImage(images: Anime['images']): string {
 }
 
 // ==========================================
-// 2. Express API Backend Client
+// 2. Express API Backend Client & Versioning
 // ==========================================
+export const APP_VERSION = Constants.expoConfig?.version || '1.0.0';
+
+export class OutdatedVersionError extends Error {
+  minVersion: string;
+  currentVersion: string;
+  downloadUrl: string;
+
+  constructor(data: { minVersion: string; currentVersion: string; downloadUrl: string; message?: string }) {
+    super(data.message || 'A mandatory update is required to continue using the application.');
+    this.name = 'OutdatedVersionError';
+    this.minVersion = data.minVersion;
+    this.currentVersion = data.currentVersion;
+    this.downloadUrl = data.downloadUrl;
+  }
+}
+
 const getBaseUrl = (): string => {
   const envUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
 
@@ -149,7 +164,7 @@ const getBaseUrl = (): string => {
 
   // 3. Fallbacks
   if (Platform.OS === 'android') {
-    return 'http://10.10.28.173:5000/api';
+    return 'http://10.0.2.2:5000/api';
   }
   return 'http://localhost:5000/api';
 };
@@ -173,6 +188,36 @@ export interface UserResponse {
   _id: string;
   username: string;
   createdAt: string;
+}
+
+/**
+ * Generic fetch wrapper attaching X-App-Version header and parsing HTTP 426 errors
+ */
+async function backendFetch(path: string, options: RequestInit = {}): Promise<any> {
+  const url = `${getApiBaseUrl()}${path}`;
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-App-Version': APP_VERSION,
+    ...(options.headers || {}),
+  };
+
+  const response = await fetch(url, { ...options, headers });
+  const json = await response.json().catch(() => ({}));
+
+  if (response.status === 426 || json.error === 'OUTDATED_VERSION') {
+    throw new OutdatedVersionError({
+      minVersion: json.minVersion || '1.0.0',
+      currentVersion: json.currentVersion || APP_VERSION,
+      downloadUrl: json.downloadUrl || 'https://github.com/mdshaharulsiyam/anime_app',
+      message: json.message,
+    });
+  }
+
+  if (!response.ok || json.success === false) {
+    throw new Error(json.message || `API request failed with status ${response.status}`);
+  }
+
+  return json;
 }
 
 /**
@@ -218,18 +263,10 @@ export function toLibraryEntry(item: BackendAnimeItem): LibraryEntry {
  * POST /api/users/login-or-register
  */
 export async function loginOrRegisterUser(username: string): Promise<UserResponse> {
-  const response = await fetch(`${getApiBaseUrl()}/users/login-or-register`, {
+  const json = await backendFetch('/users/login-or-register', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: username.trim() }),
   });
-
-  const json = await response.json();
-
-  if (!response.ok || !json.success) {
-    throw new Error(json.message || 'Failed to authenticate user');
-  }
-
   return json.data;
 }
 
@@ -237,13 +274,7 @@ export async function loginOrRegisterUser(username: string): Promise<UserRespons
  * GET /api/anime/:username
  */
 export async function fetchUserAnimeList(username: string): Promise<LibraryEntry[]> {
-  const response = await fetch(`${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}`);
-  const json = await response.json();
-
-  if (!response.ok || !json.success) {
-    throw new Error(json.message || 'Failed to fetch anime list');
-  }
-
+  const json = await backendFetch(`/anime/${encodeURIComponent(username.trim())}`);
   return (json.data as BackendAnimeItem[]).map(toLibraryEntry);
 }
 
@@ -263,17 +294,10 @@ export async function upsertAnime(
     score: entry.score ?? null,
   };
 
-  const response = await fetch(`${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}`, {
+  const json = await backendFetch(`/anime/${encodeURIComponent(username.trim())}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-
-  const json = await response.json();
-
-  if (!response.ok || !json.success) {
-    throw new Error(json.message || 'Failed to save anime entry');
-  }
 
   return json.data;
 }
@@ -282,16 +306,10 @@ export async function upsertAnime(
  * DELETE /api/anime/:username/:animeId
  */
 export async function deleteAnime(username: string, animeId: number | string): Promise<void> {
-  const response = await fetch(
-    `${getApiBaseUrl()}/anime/${encodeURIComponent(username.trim())}/${encodeURIComponent(String(animeId))}`,
+  await backendFetch(
+    `/anime/${encodeURIComponent(username.trim())}/${encodeURIComponent(String(animeId))}`,
     {
       method: 'DELETE',
     }
   );
-
-  const json = await response.json();
-
-  if (!response.ok || !json.success) {
-    throw new Error(json.message || 'Failed to delete anime entry');
-  }
 }

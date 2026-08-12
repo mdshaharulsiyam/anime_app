@@ -11,7 +11,8 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { deleteAnime, fetchUserAnimeList, upsertAnime } from './api';
+import { VersionErrorDetails } from '../components/ForceUpdateModal';
+import { deleteAnime, fetchUserAnimeList, OutdatedVersionError, upsertAnime } from './api';
 import { Anime } from './types';
 
 export type WatchStatus = 'watching' | 'plan' | 'completed' | 'on_hold' | 'dropped';
@@ -81,6 +82,7 @@ interface LibraryContextValue {
   ready: boolean;
   loading: boolean;
   error: string | null;
+  versionError: VersionErrorDetails | null;
   isSaved: (id: number) => boolean;
   getEntry: (id: number) => LibraryEntry | undefined;
   byStatus: (status: WatchStatus) => LibraryEntry[];
@@ -113,6 +115,20 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [versionError, setVersionError] = useState<VersionErrorDetails | null>(null);
+
+  const handleApiError = useCallback((err: any, fallbackMsg: string) => {
+    if (err instanceof OutdatedVersionError) {
+      setVersionError({
+        minVersion: err.minVersion,
+        currentVersion: err.currentVersion,
+        downloadUrl: err.downloadUrl,
+        message: err.message,
+      });
+    } else {
+      setError(err.message || fallbackMsg);
+    }
+  }, []);
 
   // Load user's anime list from backend
   const loadUserAnime = useCallback(async (activeUsername: string) => {
@@ -123,11 +139,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setEntries(list);
     } catch (err: any) {
       console.error('[LibraryProvider Error] Failed fetching user anime:', err);
-      setError(err.message || 'Failed to load anime list');
+      handleApiError(err, 'Failed to load anime list');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleApiError]);
 
   // Initialize username on startup
   useEffect(() => {
@@ -177,10 +193,10 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       if (!username) return;
       upsertAnime(username, entry).catch((err) => {
         console.error('[Sync Error] Failed to update anime:', err);
-        setError('Syncing change to server failed. Retrying...');
+        handleApiError(err, 'Syncing change to server failed. Retrying...');
       });
     },
-    [username]
+    [username, handleApiError]
   );
 
   // Async helper to sync entry deletion to server
@@ -189,10 +205,10 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       if (!username) return;
       deleteAnime(username, animeId).catch((err) => {
         console.error('[Sync Error] Failed to delete anime:', err);
-        setError('Deleting item from server failed.');
+        handleApiError(err, 'Deleting item from server failed.');
       });
     },
-    [username]
+    [username, handleApiError]
   );
 
   const isSaved = useCallback((id: number) => entries.some((e) => e.mal_id === id), [entries]);
@@ -324,6 +340,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       ready,
       loading,
       error,
+      versionError,
       isSaved,
       getEntry,
       byStatus,
@@ -346,6 +363,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       ready,
       loading,
       error,
+      versionError,
       isSaved,
       getEntry,
       byStatus,
