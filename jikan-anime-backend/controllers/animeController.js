@@ -18,12 +18,23 @@ const findUserByUsername = async (rawUsername) => {
 export const getUserAnime = async (req, res, next) => {
   try {
     const { username } = req.params;
-    const user = await findUserByUsername(username);
-
-    if (!user) {
-      return res.status(404).json({
+    if (!username || !username.trim()) {
+      return res.status(400).json({
         success: false,
-        message: `User '${username}' not found`,
+        message: 'Username is required',
+      });
+    }
+
+    const cleanUsername = username.trim().toLowerCase();
+    let user = await findUserByUsername(cleanUsername);
+
+    // Auto-create user behind the scenes if not found
+    if (!user) {
+      user = await User.create({ username: cleanUsername });
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
       });
     }
 
@@ -94,13 +105,14 @@ export const upsertUserAnime = async (req, res, next) => {
  */
 export const deleteUserAnime = async (req, res, next) => {
   try {
-    const { username, animeId } = req.params;
-    const user = await findUserByUsername(username);
+    const cleanUsername = username?.trim().toLowerCase();
+    const user = await findUserByUsername(cleanUsername);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: `User '${username}' not found`,
+      return res.status(200).json({
+        success: true,
+        message: 'User does not exist, nothing to delete',
+        data: null,
       });
     }
 

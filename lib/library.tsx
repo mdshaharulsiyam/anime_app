@@ -12,7 +12,13 @@ import React, {
   useState,
 } from 'react';
 import { VersionErrorDetails } from '../components/ForceUpdateModal';
-import { deleteAnime, fetchUserAnimeList, OutdatedVersionError, upsertAnime } from './api';
+import {
+  deleteAnime,
+  fetchUserAnimeList,
+  loginOrRegisterUser,
+  OutdatedVersionError,
+  upsertAnime,
+} from './api';
 import { Anime } from './types';
 
 export type WatchStatus = 'watching' | 'plan' | 'completed' | 'on_hold' | 'dropped';
@@ -130,7 +136,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Load user's anime list from backend
+  // Load user's anime list from backend with seamless auto-creation behind the scenes
   const loadUserAnime = useCallback(async (activeUsername: string) => {
     setLoading(true);
     setError(null);
@@ -138,8 +144,19 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       const list = await fetchUserAnimeList(activeUsername);
       setEntries(list);
     } catch (err: any) {
-      console.error('[LibraryProvider Error] Failed fetching user anime:', err);
-      handleApiError(err, 'Failed to load anime list');
+      if (err instanceof OutdatedVersionError) {
+        handleApiError(err, 'Outdated version');
+        return;
+      }
+      try {
+        // Automatically create/register the user behind the scenes
+        await loginOrRegisterUser(activeUsername);
+        const retryList = await fetchUserAnimeList(activeUsername);
+        setEntries(retryList);
+      } catch (retryErr: any) {
+        console.warn('[LibraryProvider] Silent background registration failed:', retryErr);
+        handleApiError(retryErr, 'Failed to load anime list');
+      }
     } finally {
       setLoading(false);
     }
