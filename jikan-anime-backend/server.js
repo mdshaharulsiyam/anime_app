@@ -10,14 +10,17 @@ import { notFound, errorHandler } from './middleware/errorHandler.js';
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
-connectDB();
-
 const app = express();
 
 // Global Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Ensure DB connection per request
+app.use(async (req, res, next) => {
+  await connectDB();
+  next();
+});
 
 // Base API Health Check Route (Bypasses Version Check)
 app.get('/api/health', (req, res) => {
@@ -41,6 +44,10 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`[Server] Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[Server] Server running on port ${PORT}`);
+  });
+}
+
+export default app;

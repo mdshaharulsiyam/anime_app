@@ -104,7 +104,7 @@ export default function DiscoverScreen() {
       <View style={styles.topBar}>
         <View>
           <Text style={styles.brand}>
-            Shiori<Text style={{ color: colors.primary }}> Anime</Text>
+            Ani<Text style={{ color: colors.primary }}>Pulse</Text>
           </Text>
           {/* <Text style={styles.brandSub}>Powered by MyAnimeList · Jikan API</Text> */}
         </View>
