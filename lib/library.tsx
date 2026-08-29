@@ -60,6 +60,7 @@ export const STATUS_META: Record<
 
 const USERNAME_KEY = 'Anipulse:username:v1';
 const PASSKEY_KEY = 'Anipulse:passkey:v1';
+const LOCAL_ENTRIES_KEY = 'Anipulse:library_entries:v1';
 
 export function toEntry(
   anime: Anime,
@@ -127,6 +128,23 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [versionError, setVersionError] = useState<VersionErrorDetails | null>(null);
 
+  const usernameRef = React.useRef<string | null>(username);
+  useEffect(() => {
+    usernameRef.current = username;
+  }, [username]);
+
+  const entriesRef = React.useRef<LibraryEntry[]>(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
+  // Helper to persist entries immediately to AsyncStorage
+  const saveLocalEntries = useCallback((newEntries: LibraryEntry[]) => {
+    AsyncStorage.setItem(LOCAL_ENTRIES_KEY, JSON.stringify(newEntries)).catch((err) => {
+      console.warn('[LocalStorage] Failed to save entries locally:', err);
+    });
+  }, []);
+
   const handleApiError = useCallback((err: any, fallbackMsg: string) => {
     if (err instanceof OutdatedVersionError) {
       setVersionError({
@@ -140,55 +158,117 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Load user's anime list from backend
-  const loadUserAnime = useCallback(async (activeUsername: string, activePasskey?: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await fetchUserAnimeList(activeUsername);
-      setEntries(list);
-    } catch (err: any) {
-      if (err instanceof OutdatedVersionError) {
-        handleApiError(err, 'Outdated version');
-        return;
-      }
-      try {
-        if (activePasskey) {
-          await loginOrRegisterUser(activeUsername, activePasskey);
-        }
-        const retryList = await fetchUserAnimeList(activeUsername);
-        setEntries(retryList);
-      } catch (retryErr: any) {
-        console.warn('[LibraryProvider] Silent background registration failed:', retryErr);
-        handleApiError(retryErr, 'Failed to load anime list');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [handleApiError]);
+  // Async helper to sync entry mutation to server in the background
+  const syncUpsert = useCallback(
+    (entry: LibraryEntry) => {
+      const activeUser = usernameRef.current;
+      if (!activeUser) return;
+      upsertAnime(activeUser, entry).catch((err) => {
+        console.warn('[Sync Warning] Backend update failed, locally saved:', err?.message || err);
+      });
+    },
+    []
+  );
 
-  // Initialize username & passkey on startup
+  // Async helper to sync entry deletion to server in the background
+  const syncDelete = useCallback(
+    (animeId: number) => {
+      const activeUser = usernameRef.current;
+      if (!activeUser) return;
+      deleteAnime(activeUser, animeId).catch((err) => {
+        console.warn('[Sync Warning] Backend delete failed, locally saved:', err?.message || err);
+      });
+    },
+    []
+  );
+
+  // Sync cloud list and local list bidirectionally
+  const loadUserAnime = useCallback(
+    async (activeUsername: string, activePasskey?: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const cloudList = await fetchUserAnimeList(activeUsername);
+        const currentLocal = entriesRef.current;
+
+        // If local entries exist and have newer timestamps, sync those up to cloud
+        const mergedMap = new Map<number, LibraryEntry>();
+        for (const item of cloudList) {
+          mergedMap.set(item.mal_id, item);
+        }
+        for (const localItem of currentLocal) {
+          const cloudItem = mergedMap.get(localItem.mal_id);
+          if (!cloudItem || localItem.updatedAt > cloudItem.updatedAt) {
+            mergedMap.set(localItem.mal_id, localItem);
+            // Push newer local item to cloud in background
+            syncUpsert(localItem);
+          }
+        }
+
+        const mergedList = Array.from(mergedMap.values()).sort(
+          (a, b) => b.updatedAt - a.updatedAt
+        );
+
+        setEntries(mergedList);
+        saveLocalEntries(mergedList);
+      } catch (err: any) {
+        if (err instanceof OutdatedVersionError) {
+          handleApiError(err, 'Outdated version');
+          return;
+        }
+        try {
+          if (activePasskey) {
+            await loginOrRegisterUser(activeUsername, activePasskey);
+          }
+          const retryList = await fetchUserAnimeList(activeUsername);
+          setEntries(retryList);
+          saveLocalEntries(retryList);
+        } catch (retryErr: any) {
+          console.warn('[LibraryProvider] Cloud list fetch failed, using local offline data:', retryErr);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleApiError, saveLocalEntries, syncUpsert]
+  );
+
+  // Initialize username, passkey, and local cached entries instantly on startup
   useEffect(() => {
     (async () => {
       try {
-        const [savedName, savedPasskey] = await Promise.all([
+        const [savedName, savedPasskey, savedEntriesRaw] = await Promise.all([
           AsyncStorage.getItem(USERNAME_KEY),
           AsyncStorage.getItem(PASSKEY_KEY),
+          AsyncStorage.getItem(LOCAL_ENTRIES_KEY),
         ]);
+
+        if (savedEntriesRaw) {
+          try {
+            const parsed = JSON.parse(savedEntriesRaw);
+            if (Array.isArray(parsed)) {
+              setEntries(parsed);
+            }
+          } catch (e) {
+            console.warn('[Library] Failed parsing local storage entries:', e);
+          }
+        }
+
         if (savedName) {
           setUsername(savedName);
           setPasskey(savedPasskey);
-          await loadUserAnime(savedName, savedPasskey || undefined);
+          // Sync with cloud behind the scenes
+          loadUserAnime(savedName, savedPasskey || undefined);
         }
       } catch (err) {
-        console.warn('Error reading stored credentials:', err);
+        console.warn('Error reading stored credentials/entries:', err);
       } finally {
         setReady(true);
       }
     })();
   }, [loadUserAnime]);
 
-  // Save new username locally and load list
+  // Save new username locally and sync
   const saveUsername = useCallback(
     async (name: string, key?: string) => {
       const trimmed = name.trim().toLowerCase();
@@ -209,6 +289,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     await Promise.all([
       AsyncStorage.removeItem(USERNAME_KEY),
       AsyncStorage.removeItem(PASSKEY_KEY),
+      AsyncStorage.removeItem(LOCAL_ENTRIES_KEY),
     ]);
     setUsername(null);
     setPasskey(null);
@@ -221,30 +302,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       await loadUserAnime(username);
     }
   }, [username, loadUserAnime]);
-
-  // Async helper to sync entry mutation to server
-  const syncUpsert = useCallback(
-    (entry: LibraryEntry) => {
-      if (!username) return;
-      upsertAnime(username, entry).catch((err) => {
-        console.error('[Sync Error] Failed to update anime:', err);
-        handleApiError(err, 'Syncing change to server failed. Retrying...');
-      });
-    },
-    [username, handleApiError]
-  );
-
-  // Async helper to sync entry deletion to server
-  const syncDelete = useCallback(
-    (animeId: number) => {
-      if (!username) return;
-      deleteAnime(username, animeId).catch((err) => {
-        console.error('[Sync Error] Failed to delete anime:', err);
-        handleApiError(err, 'Deleting item from server failed.');
-      });
-    },
-    [username, handleApiError]
-  );
 
   const isSaved = useCallback((id: number) => entries.some((e) => e.mal_id === id), [entries]);
   const getEntry = useCallback((id: number) => entries.find((e) => e.mal_id === id), [entries]);
@@ -274,58 +331,72 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const add = useCallback(
     (anime: Anime, image: string, status: WatchStatus = 'plan') => {
       const existing = entries.find((e) => e.mal_id === anime.mal_id);
+      let updatedList: LibraryEntry[];
+      let target: LibraryEntry;
+
       if (existing) {
-        const updated = { ...existing, status, updatedAt: Date.now() };
-        setEntries((prev) => prev.map((e) => (e.mal_id === anime.mal_id ? updated : e)));
-        syncUpsert(updated);
+        target = { ...existing, status, updatedAt: Date.now() };
+        updatedList = entries.map((e) => (e.mal_id === anime.mal_id ? target : e));
       } else {
-        const newEntry = toEntry(anime, image, status);
-        setEntries((prev) => [newEntry, ...prev]);
-        syncUpsert(newEntry);
+        target = toEntry(anime, image, status);
+        updatedList = [target, ...entries];
       }
+
+      setEntries(updatedList);
+      saveLocalEntries(updatedList);
+      syncUpsert(target);
     },
-    [entries, syncUpsert],
+    [entries, saveLocalEntries, syncUpsert],
   );
 
   const toggleSave = useCallback(
     (anime: Anime, image: string) => {
       if (entries.some((e) => e.mal_id === anime.mal_id)) {
-        setEntries((prev) => prev.filter((e) => e.mal_id !== anime.mal_id));
+        const updatedList = entries.filter((e) => e.mal_id !== anime.mal_id);
+        setEntries(updatedList);
+        saveLocalEntries(updatedList);
         syncDelete(anime.mal_id);
       } else {
-        const newEntry = toEntry(anime, image, 'plan');
-        setEntries((prev) => [newEntry, ...prev]);
-        syncUpsert(newEntry);
+        const target = toEntry(anime, image, 'plan');
+        const updatedList = [target, ...entries];
+        setEntries(updatedList);
+        saveLocalEntries(updatedList);
+        syncUpsert(target);
       }
     },
-    [entries, syncDelete, syncUpsert],
+    [entries, saveLocalEntries, syncDelete, syncUpsert],
   );
 
   const remove = useCallback(
     (id: number) => {
-      setEntries((prev) => prev.filter((e) => e.mal_id !== id));
+      const updatedList = entries.filter((e) => e.mal_id !== id);
+      setEntries(updatedList);
+      saveLocalEntries(updatedList);
       syncDelete(id);
     },
-    [syncDelete],
+    [entries, saveLocalEntries, syncDelete],
   );
 
   const updateEntry = useCallback(
     (id: number, mutate: (e: LibraryEntry) => LibraryEntry) => {
       let target: LibraryEntry | null = null;
-      setEntries((prev) =>
-        prev.map((e) => {
+      setEntries((prev) => {
+        const updatedList = prev.map((e) => {
           if (e.mal_id === id) {
             target = { ...mutate(e), updatedAt: Date.now() };
             return target;
           }
           return e;
-        })
-      );
+        });
+        saveLocalEntries(updatedList);
+        return updatedList;
+      });
+
       if (target) {
         syncUpsert(target);
       }
     },
-    [syncUpsert]
+    [saveLocalEntries, syncUpsert]
   );
 
   const setStatus = useCallback(

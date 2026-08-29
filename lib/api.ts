@@ -179,6 +179,8 @@ export interface BackendAnimeItem {
   coverImage?: string;
   status: 'watching' | 'completed' | 'plan_to_watch' | 'on_hold' | 'dropped';
   episodesWatched: number;
+  episodes?: number | null;
+  airing?: boolean;
   score?: number | null;
   createdAt?: string;
   updatedAt?: string;
@@ -266,11 +268,11 @@ export function toLibraryEntry(item: BackendAnimeItem): LibraryEntry {
     score: item.score ?? null,
     type: 'Anime',
     year: null,
-    episodes: null,
-    airing: false,
+    episodes: item.episodes ?? null,
+    airing: item.airing ?? false,
     broadcast: null,
     status: toFrontendStatus(item.status),
-    progress: item.episodesWatched || 0,
+    progress: item.episodesWatched ?? 0,
     updatedAt: item.updatedAt ? new Date(item.updatedAt).getTime() : Date.now(),
   };
 }
@@ -335,6 +337,8 @@ export async function upsertAnime(
     coverImage: entry.image || '',
     status: toBackendStatus(entry.status || 'plan'),
     episodesWatched: entry.progress ?? 0,
+    episodes: entry.episodes ?? null,
+    airing: entry.airing ?? false,
     score: entry.score ?? null,
   };
 

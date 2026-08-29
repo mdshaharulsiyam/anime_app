@@ -58,7 +58,7 @@ export const getUserAnime = async (req, res, next) => {
 export const upsertUserAnime = async (req, res, next) => {
   try {
     const { username } = req.params;
-    const { animeId, title, coverImage, status, episodesWatched, score } = req.body;
+    const { animeId, title, coverImage, status, episodesWatched, episodes, airing, score } = req.body;
 
     if (!animeId || !title) {
       return res.status(400).json({
@@ -79,6 +79,8 @@ export const upsertUserAnime = async (req, res, next) => {
       coverImage: coverImage ?? '',
       status: status || 'watching',
       episodesWatched: episodesWatched !== undefined ? Number(episodesWatched) : 0,
+      episodes: episodes !== undefined && episodes !== null ? Number(episodes) : null,
+      airing: airing !== undefined ? Boolean(airing) : false,
       score: score !== undefined && score !== null ? Number(score) : null,
     };
 

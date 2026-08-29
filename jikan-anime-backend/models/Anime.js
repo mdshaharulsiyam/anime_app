@@ -35,6 +35,14 @@ const animeSchema = new mongoose.Schema(
       default: 0,
       min: [0, 'Episodes watched cannot be negative'],
     },
+    episodes: {
+      type: Number,
+      default: null,
+    },
+    airing: {
+      type: Boolean,
+      default: false,
+    },
     score: {
       type: Number,
       min: [0, 'Score cannot be less than 0'],
