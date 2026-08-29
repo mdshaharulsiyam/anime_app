@@ -93,6 +93,9 @@ export interface LibraryContextValue {
   loading: boolean;
   error: string | null;
   versionError: VersionErrorDetails | null;
+  isAuthModalOpen: boolean;
+  openAuthModal: () => void;
+  closeAuthModal: () => void;
   saveUsername: (name: string, passkey?: string) => Promise<void>;
   switchUser: () => Promise<void>;
   refreshList: () => Promise<void>;
@@ -127,6 +130,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [versionError, setVersionError] = useState<VersionErrorDetails | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const openAuthModal = useCallback(() => setIsAuthModalOpen(true), []);
+  const closeAuthModal = useCallback(() => setIsAuthModalOpen(false), []);
 
   const usernameRef = React.useRef<string | null>(username);
   useEffect(() => {
@@ -448,6 +455,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       versionError,
+      isAuthModalOpen,
+      openAuthModal,
+      closeAuthModal,
       isSaved,
       getEntry,
       byStatus,
@@ -472,6 +482,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       loading,
       error,
       versionError,
+      isAuthModalOpen,
+      openAuthModal,
+      closeAuthModal,
       isSaved,
       getEntry,
       byStatus,

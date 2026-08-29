@@ -19,7 +19,16 @@ type Filter = WatchStatus | 'all';
 
 export default function MyListScreen() {
   const insets = useSafeAreaInsets();
-  const { entries, counts, username, switchUser, loading, error, refreshList } = useLibrary();
+  const {
+    entries,
+    counts,
+    username,
+    switchUser,
+    loading,
+    error,
+    refreshList,
+    openAuthModal,
+  } = useLibrary();
   const [filter, setFilter] = useState<Filter>('watching');
 
   const visible = useMemo(() => {
@@ -74,7 +83,17 @@ export default function MyListScreen() {
               <Ionicons name="log-out-outline" size={18} color={colors.textMuted} />
             </Pressable>
           </View>
-        ) : null}
+        ) : (
+          <Pressable
+            onPress={openAuthModal}
+            style={styles.signInBtn}
+            hitSlop={8}
+            accessibilityLabel="Sign in & Sync"
+          >
+            <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
+            <Text style={styles.signInBtnText}>Cloud Sync</Text>
+          </Pressable>
+        )}
       </View>
 
       {error ? (
@@ -176,6 +195,22 @@ const styles = StyleSheet.create({
   },
   userBadgeText: {
     color: colors.text,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.bold,
+  },
+  signInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.card,
+    borderColor: colors.primary,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+  },
+  signInBtnText: {
+    color: colors.primary,
     fontSize: font.size.xs,
     fontWeight: font.weight.bold,
   },

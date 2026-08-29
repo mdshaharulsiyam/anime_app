@@ -8,10 +8,26 @@ import { colors } from '../constants/theme';
 import { LibraryProvider, useLibrary } from '../lib/library';
 
 function AppContent() {
-  const { username, ready, saveUsername, versionError } = useLibrary();
+  const {
+    username,
+    ready,
+    saveUsername,
+    versionError,
+    isAuthModalOpen,
+    closeAuthModal,
+  } = useLibrary();
 
-  // Show username onboarding modal whenever ready is true, username is null, and no version error exists
-  const showUsernameModal = ready && !username && !versionError;
+  const [dismissedInitialModal, setDismissedInitialModal] = React.useState(false);
+
+  // Show username modal on first launch if not logged in (unless dismissed), or when explicitly triggered
+  const showUsernameModal =
+    (!versionError && isAuthModalOpen) ||
+    (ready && !username && !versionError && !dismissedInitialModal);
+
+  const handleClose = () => {
+    setDismissedInitialModal(true);
+    closeAuthModal();
+  };
 
   return (
     <>
@@ -34,8 +50,10 @@ function AppContent() {
 
       <UsernameModal
         visible={showUsernameModal}
+        onClose={handleClose}
         onSuccess={async (newUsername, newPasskey) => {
           await saveUsername(newUsername, newPasskey);
+          closeAuthModal();
         }}
       />
 

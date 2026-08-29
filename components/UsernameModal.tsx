@@ -19,9 +19,10 @@ const LEGACY_STORAGE_KEY = 'Shiori:library:v1';
 interface UsernameModalProps {
   visible: boolean;
   onSuccess: (username: string, passkey: string) => Promise<void>;
+  onClose?: () => void;
 }
 
-export function UsernameModal({ visible, onSuccess }: UsernameModalProps) {
+export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProps) {
   const [usernameInput, setUsernameInput] = useState('');
   const [passkeyInput, setPasskeyInput] = useState('');
   const [showPasskey, setShowPasskey] = useState(false);
@@ -136,12 +137,23 @@ export function UsernameModal({ visible, onSuccess }: UsernameModalProps) {
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
+    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modalCard}>
-          <Text style={styles.title}>Welcome to Anime Tracker</Text>
+          {onClose ? (
+            <Pressable
+              style={styles.closeBtn}
+              onPress={onClose}
+              hitSlop={10}
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={22} color={colors.textMuted} />
+            </Pressable>
+          ) : null}
+
+          <Text style={styles.title}>Anime Tracker Sync</Text>
           <Text style={styles.subtitle}>
-            Enter your username and passkey to securely sync your anime collection across devices.
+            Sign in with your username and passkey to backup & sync your anime across all devices. Or continue using offline storage!
           </Text>
 
           {errorMessage ? (
@@ -251,6 +263,12 @@ export function UsernameModal({ visible, onSuccess }: UsernameModalProps) {
               )}
             </Pressable>
           )}
+
+          {onClose && (
+            <Pressable style={styles.skipBtn} onPress={onClose} hitSlop={8}>
+              <Text style={styles.skipBtnText}>Continue Offline (Local Only)</Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </Modal>
@@ -278,6 +296,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 20,
     elevation: 10,
+    position: 'relative',
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: spacing.lg,
+    right: spacing.lg,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    zIndex: 10,
   },
   title: {
     color: colors.text,
@@ -395,5 +428,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: font.size.md,
     fontWeight: font.weight.bold,
+  },
+  skipBtn: {
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipBtnText: {
+    color: colors.textMuted,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.semibold,
+    textDecorationLine: 'underline',
   },
 });
