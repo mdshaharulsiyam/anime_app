@@ -190,6 +190,18 @@ export interface UserResponse {
   createdAt: string;
 }
 
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 /**
  * Generic fetch wrapper attaching X-App-Version header and parsing HTTP 426 errors
  */
@@ -214,7 +226,11 @@ async function backendFetch(path: string, options: RequestInit = {}): Promise<an
   }
 
   if (!response.ok || json.success === false) {
-    throw new Error(json.message || `API request failed with status ${response.status}`);
+    throw new ApiError(
+      json.message || `API request failed with status ${response.status}`,
+      response.status,
+      json.code
+    );
   }
 
   return json;
@@ -260,12 +276,40 @@ export function toLibraryEntry(item: BackendAnimeItem): LibraryEntry {
 }
 
 /**
+ * POST /api/users/login
+ */
+export async function loginUser(username: string, passkey: string): Promise<UserResponse> {
+  const json = await backendFetch('/users/login', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: username.trim(),
+      passkey: passkey.trim(),
+    }),
+  });
+  return json.data;
+}
+
+/**
+ * POST /api/users/register
+ */
+export async function registerUser(username: string, passkey: string): Promise<UserResponse> {
+  const json = await backendFetch('/users/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      username: username.trim(),
+      passkey: passkey.trim(),
+    }),
+  });
+  return json.data;
+}
+
+/**
  * POST /api/users/login-or-register
  */
-export async function loginOrRegisterUser(username: string): Promise<UserResponse> {
+export async function loginOrRegisterUser(username: string, passkey?: string): Promise<UserResponse> {
   const json = await backendFetch('/users/login-or-register', {
     method: 'POST',
-    body: JSON.stringify({ username: username.trim() }),
+    body: JSON.stringify({ username: username.trim(), passkey: passkey?.trim() }),
   });
   return json.data;
 }

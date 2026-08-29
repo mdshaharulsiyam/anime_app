@@ -5,6 +5,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {
   createContext,
+  ReactNode,
   useCallback,
   useContext,
   useEffect,
@@ -57,7 +58,8 @@ export const STATUS_META: Record<
   dropped: { label: 'Dropped', short: 'Dropped', icon: 'close-circle', color: '#FF5C7A' },
 };
 
-const USERNAME_KEY = 'Shiori:username:v1';
+const USERNAME_KEY = 'Anipulse:username:v1';
+const PASSKEY_KEY = 'Anipulse:passkey:v1';
 
 export function toEntry(
   anime: Anime,
@@ -82,18 +84,15 @@ export function toEntry(
   };
 }
 
-interface LibraryContextValue {
+export interface LibraryContextValue {
   entries: LibraryEntry[];
   username: string | null;
+  passkey: string | null;
   ready: boolean;
   loading: boolean;
   error: string | null;
   versionError: VersionErrorDetails | null;
-  isSaved: (id: number) => boolean;
-  getEntry: (id: number) => LibraryEntry | undefined;
-  byStatus: (status: WatchStatus) => LibraryEntry[];
-  counts: Record<WatchStatus, number>;
-  saveUsername: (name: string) => Promise<void>;
+  saveUsername: (name: string, passkey?: string) => Promise<void>;
   switchUser: () => Promise<void>;
   refreshList: () => Promise<void>;
   /** Add (as Plan to Watch) if missing, else remove. */
@@ -106,6 +105,10 @@ interface LibraryContextValue {
   increment: (id: number) => void;
   decrement: (id: number) => void;
   clear: () => void;
+  isSaved: (id: number) => boolean;
+  getEntry: (id: number) => LibraryEntry | undefined;
+  byStatus: (status: WatchStatus) => LibraryEntry[];
+  counts: Record<WatchStatus, number>;
 }
 
 const LibraryContext = createContext<LibraryContextValue | undefined>(undefined);
@@ -115,9 +118,10 @@ function clampProgress(entry: LibraryEntry, value: number): number {
   return Math.max(0, Math.min(value, max === Infinity ? value : max));
 }
 
-export function LibraryProvider({ children }: { children: React.ReactNode }) {
+export function LibraryProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [username, setUsername] = useState<string | null>(null);
+  const [passkey, setPasskey] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,8 +140,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Load user's anime list from backend with seamless auto-creation behind the scenes
-  const loadUserAnime = useCallback(async (activeUsername: string) => {
+  // Load user's anime list from backend
+  const loadUserAnime = useCallback(async (activeUsername: string, activePasskey?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -149,8 +153,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       try {
-        // Automatically create/register the user behind the scenes
-        await loginOrRegisterUser(activeUsername);
+        if (activePasskey) {
+          await loginOrRegisterUser(activeUsername, activePasskey);
+        }
         const retryList = await fetchUserAnimeList(activeUsername);
         setEntries(retryList);
       } catch (retryErr: any) {
@@ -162,17 +167,21 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handleApiError]);
 
-  // Initialize username on startup
+  // Initialize username & passkey on startup
   useEffect(() => {
     (async () => {
       try {
-        const savedName = await AsyncStorage.getItem(USERNAME_KEY);
+        const [savedName, savedPasskey] = await Promise.all([
+          AsyncStorage.getItem(USERNAME_KEY),
+          AsyncStorage.getItem(PASSKEY_KEY),
+        ]);
         if (savedName) {
           setUsername(savedName);
-          await loadUserAnime(savedName);
+          setPasskey(savedPasskey);
+          await loadUserAnime(savedName, savedPasskey || undefined);
         }
       } catch (err) {
-        console.warn('Error reading stored username:', err);
+        console.warn('Error reading stored credentials:', err);
       } finally {
         setReady(true);
       }
@@ -181,19 +190,28 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
 
   // Save new username locally and load list
   const saveUsername = useCallback(
-    async (name: string) => {
+    async (name: string, key?: string) => {
       const trimmed = name.trim().toLowerCase();
+      const trimmedKey = key ? key.trim() : null;
       setUsername(trimmed);
+      setPasskey(trimmedKey);
       await AsyncStorage.setItem(USERNAME_KEY, trimmed);
-      await loadUserAnime(trimmed);
+      if (trimmedKey) {
+        await AsyncStorage.setItem(PASSKEY_KEY, trimmedKey);
+      }
+      await loadUserAnime(trimmed, trimmedKey || undefined);
     },
     [loadUserAnime]
   );
 
   // Logout / Switch User
   const switchUser = useCallback(async () => {
-    await AsyncStorage.removeItem(USERNAME_KEY);
+    await Promise.all([
+      AsyncStorage.removeItem(USERNAME_KEY),
+      AsyncStorage.removeItem(PASSKEY_KEY),
+    ]);
     setUsername(null);
+    setPasskey(null);
     setEntries([]);
     setError(null);
   }, []);
@@ -354,6 +372,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     () => ({
       entries,
       username,
+      passkey,
       ready,
       loading,
       error,
@@ -377,6 +396,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     [
       entries,
       username,
+      passkey,
       ready,
       loading,
       error,

@@ -34,8 +34,8 @@ function AppContent() {
 
       <UsernameModal
         visible={showUsernameModal}
-        onSuccess={async (newUsername) => {
-          await saveUsername(newUsername);
+        onSuccess={async (newUsername, newPasskey) => {
+          await saveUsername(newUsername, newPasskey);
         }}
       />
 

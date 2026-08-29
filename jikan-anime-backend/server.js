@@ -18,8 +18,18 @@ app.use(express.json());
 
 // Ensure DB connection per request
 app.use(async (req, res, next) => {
-  await connectDB();
-  next();
+  try {
+    const conn = await connectDB();
+    if (!conn) {
+      return res.status(503).json({
+        success: false,
+        message: 'Database connection is not available. Please check MongoDB configuration.',
+      });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Base API Health Check Route (Bypasses Version Check)
