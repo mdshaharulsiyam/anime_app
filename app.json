@@ -12,12 +12,13 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.shaharulsiyam.shioriapp",
+      "versionCode": 10,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/logo.png"
       },
-      "predictiveBackGestureEnabled": false,
-      "package": "com.shaharulsiyam.shioriapp"
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/logo.png",
