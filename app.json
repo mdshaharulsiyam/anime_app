@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.shaharulsiyam.shioriapp",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/logo.png"
