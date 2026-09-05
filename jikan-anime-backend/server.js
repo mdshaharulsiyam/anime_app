@@ -32,6 +32,14 @@ app.use(async (req, res, next) => {
   }
 });
 
+// Root / Welcome Route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Jikan Anime App Backend API is running',
+  });
+});
+
 // Base API Health Check Route (Bypasses Version Check)
 app.get('/api/health', (req, res) => {
   res.status(200).json({

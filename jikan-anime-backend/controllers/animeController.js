@@ -107,6 +107,7 @@ export const upsertUserAnime = async (req, res, next) => {
  */
 export const deleteUserAnime = async (req, res, next) => {
   try {
+    const { username, animeId } = req.params;
     const cleanUsername = username?.trim().toLowerCase();
     const user = await findUserByUsername(cleanUsername);
 
