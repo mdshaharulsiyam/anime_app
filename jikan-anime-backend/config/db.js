@@ -9,29 +9,42 @@ if (!cached) {
 const connectDB = async () => {
   const uri = process.env.MONGO_URI;
   if (!uri) {
-    console.error('[MongoDB Error] MONGO_URI environment variable is missing.');
-    return;
+    console.warn('[MongoDB Warning] MONGO_URI environment variable is missing.');
+    return null;
   }
 
-  if (cached.conn) {
+  // If already connected (readyState === 1)
+  if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }
 
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of hanging
+      connectTimeoutMS: 10000,
     };
 
-    cached.promise = mongoose.connect(uri, opts).then((mongooseInstance) => {
-      console.log(`[MongoDB] Connected: ${mongooseInstance.connection.host}`);
-      return mongooseInstance;
-    });
+    mongoose.set('strictQuery', false);
+
+    cached.promise = mongoose
+      .connect(uri, opts)
+      .then((mongooseInstance) => {
+        console.log(`[MongoDB] Connected: ${mongooseInstance.connection.host}`);
+        return mongooseInstance;
+      })
+      .catch((err) => {
+        console.error(`[MongoDB Connection Error] ${err.message}`);
+        cached.promise = null;
+        return null;
+      });
   }
 
   try {
     cached.conn = await cached.promise;
   } catch (error) {
     cached.promise = null;
+    cached.conn = null;
     console.error(`[MongoDB Error] ${error.message}`);
   }
 

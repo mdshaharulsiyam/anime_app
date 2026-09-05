@@ -23,32 +23,32 @@ interface UsernameModalProps {
 }
 
 export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProps) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [usernameInput, setUsernameInput] = useState('');
   const [passkeyInput, setPasskeyInput] = useState('');
   const [showPasskey, setShowPasskey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [canCreateUser, setCanCreateUser] = useState(false);
 
   const validateInputs = () => {
     const trimmedUser = usernameInput.trim();
     const trimmedKey = passkeyInput.trim();
 
     if (!trimmedUser) {
-      setErrorMessage('Please enter a valid username');
+      setErrorMessage('Please enter your username');
       return null;
     }
     if (trimmedUser.length < 2) {
-      setErrorMessage('Username must be at least 2 characters long');
+      setErrorMessage('Username must be at least 2 characters');
       return null;
     }
     if (!trimmedKey) {
-      setErrorMessage('Please enter a passkey');
+      setErrorMessage(mode === 'login' ? 'Please enter your password' : 'Create a password (min 3 chars)');
       return null;
     }
     if (trimmedKey.length < 3) {
-      setErrorMessage('Passkey must be at least 3 characters long');
+      setErrorMessage('Password must be at least 3 characters');
       return null;
     }
 
@@ -63,7 +63,7 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
       try {
         const legacyItems: LibraryEntry[] = JSON.parse(rawLegacy);
         if (Array.isArray(legacyItems) && legacyItems.length > 0) {
-          setStatusMessage(`Syncing ${legacyItems.length} legacy items to your cloud list...`);
+          setStatusMessage(`Syncing ${legacyItems.length} local items to your cloud list...`);
           for (const item of legacyItems) {
             await upsertAnime(activeUsername, item);
           }
@@ -78,61 +78,47 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
     await onSuccess(activeUsername, activePasskey);
     setUsernameInput('');
     setPasskeyInput('');
-    setCanCreateUser(false);
   };
 
-  // 1. "Get Started" (Login attempt)
-  const handleLogin = async () => {
+  const handleSubmit = async () => {
     const validated = validateInputs();
     if (!validated) return;
 
     setLoading(true);
     setErrorMessage('');
-    setCanCreateUser(false);
-    setStatusMessage('Checking credentials...');
 
-    try {
-      const userObj = await loginUser(validated.username, validated.passkey);
-      await handlePostAuth(userObj.username, validated.passkey);
-    } catch (err: any) {
-      if (err instanceof ApiError && (err.status === 404 || err.code === 'USER_NOT_FOUND')) {
-        setErrorMessage(`User "@${validated.username}" doesn't exist.`);
-        setCanCreateUser(true);
-      } else if (err instanceof ApiError && (err.status === 401 || err.code === 'INVALID_PASSKEY')) {
-        setErrorMessage('Incorrect passkey for this username.');
-        setCanCreateUser(false);
-      } else {
-        setErrorMessage(err.message || 'Connection failed. Please check your backend.');
-        setCanCreateUser(false);
+    if (mode === 'login') {
+      setStatusMessage('Signing in...');
+      try {
+        const userObj = await loginUser(validated.username, validated.passkey);
+        await handlePostAuth(userObj.username, validated.passkey);
+      } catch (err: any) {
+        if (err instanceof ApiError && (err.status === 404 || err.code === 'USER_NOT_FOUND')) {
+          setErrorMessage(`User "@${validated.username}" not found. Need to create an account?`);
+        } else if (err instanceof ApiError && (err.status === 401 || err.code === 'INVALID_PASSKEY')) {
+          setErrorMessage('Incorrect password for this username.');
+        } else {
+          setErrorMessage(err.message || 'Connection failed. Please check your internet connection.');
+        }
+      } finally {
+        setLoading(false);
+        setStatusMessage('');
       }
-    } finally {
-      setLoading(false);
-      setStatusMessage('');
-    }
-  };
-
-  // 2. "Create User" (Explicit Registration)
-  const handleRegister = async () => {
-    const validated = validateInputs();
-    if (!validated) return;
-
-    setLoading(true);
-    setErrorMessage('');
-    setStatusMessage('Creating your account...');
-
-    try {
-      const userObj = await registerUser(validated.username, validated.passkey);
-      await handlePostAuth(userObj.username, validated.passkey);
-    } catch (err: any) {
-      if (err instanceof ApiError && (err.status === 409 || err.code === 'USER_ALREADY_EXISTS')) {
-        setErrorMessage('Username is already taken. Please pick another.');
-        setCanCreateUser(false);
-      } else {
-        setErrorMessage(err.message || 'Registration failed. Please try again.');
+    } else {
+      setStatusMessage('Creating account...');
+      try {
+        const userObj = await registerUser(validated.username, validated.passkey);
+        await handlePostAuth(userObj.username, validated.passkey);
+      } catch (err: any) {
+        if (err instanceof ApiError && (err.status === 409 || err.code === 'USER_ALREADY_EXISTS')) {
+          setErrorMessage('Username already taken. Please sign in or choose another name.');
+        } else {
+          setErrorMessage(err.message || 'Registration failed. Please try again.');
+        }
+      } finally {
+        setLoading(false);
+        setStatusMessage('');
       }
-    } finally {
-      setLoading(false);
-      setStatusMessage('');
     }
   };
 
@@ -151,18 +137,76 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
             </Pressable>
           ) : null}
 
-          <Text style={styles.title}>Anime Tracker Sync</Text>
-          <Text style={styles.subtitle}>
-            Sign in with your username and passkey to backup & sync your anime across all devices. Or continue using offline storage!
-          </Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="cloud-done-outline" size={26} color={colors.primary} />
+            </View>
+            <Text style={styles.title}>Cloud Sync & Backup</Text>
+            <Text style={styles.subtitle}>
+              Save and sync your anime watchlist across all your devices.
+            </Text>
+          </View>
 
+          {/* Mode Switcher Tabs */}
+          <View style={styles.tabContainer}>
+            <Pressable
+              style={[styles.tab, mode === 'login' && styles.activeTab]}
+              onPress={() => {
+                setMode('login');
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.tabText, mode === 'login' && styles.activeTabText]}>
+                Sign In
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tab, mode === 'register' && styles.activeTab]}
+              onPress={() => {
+                setMode('register');
+                setErrorMessage('');
+              }}
+            >
+              <Text style={[styles.tabText, mode === 'register' && styles.activeTabText]}>
+                Create Account
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Error Message */}
           {errorMessage ? (
             <View style={styles.errorBox}>
               <Ionicons name="alert-circle" size={18} color={colors.danger} />
-              <Text style={styles.errorText}>{errorMessage}</Text>
+              <View style={styles.errorTextContainer}>
+                <Text style={styles.errorText}>{errorMessage}</Text>
+                {mode === 'login' && errorMessage.includes('Need to create an account?') && (
+                  <Pressable
+                    onPress={() => {
+                      setMode('register');
+                      setErrorMessage('');
+                    }}
+                    hitSlop={4}
+                  >
+                    <Text style={styles.switchModeLink}>Switch to Create Account →</Text>
+                  </Pressable>
+                )}
+                {mode === 'register' && errorMessage.includes('sign in') && (
+                  <Pressable
+                    onPress={() => {
+                      setMode('login');
+                      setErrorMessage('');
+                    }}
+                    hitSlop={4}
+                  >
+                    <Text style={styles.switchModeLink}>Switch to Sign In →</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           ) : null}
 
+          {/* Loading status */}
           {statusMessage && loading ? (
             <View style={styles.statusBox}>
               <ActivityIndicator size="small" color={colors.primary} />
@@ -183,7 +227,6 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
                 onChangeText={(text) => {
                   setUsernameInput(text);
                   if (errorMessage) setErrorMessage('');
-                  if (canCreateUser) setCanCreateUser(false);
                 }}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -192,14 +235,16 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
             </View>
           </View>
 
-          {/* Passkey Field */}
+          {/* Password Field */}
           <View style={styles.inputWrap}>
-            <Text style={styles.inputLabel}>Passkey</Text>
+            <Text style={styles.inputLabel}>
+              {mode === 'login' ? 'Password' : 'Password / Passkey'}
+            </Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="key-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Enter your passkey"
+                placeholder={mode === 'login' ? 'Enter your password' : 'Create a password'}
                 placeholderTextColor={colors.textFaint}
                 value={passkeyInput}
                 onChangeText={(text) => {
@@ -215,6 +260,7 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
                 onPress={() => setShowPasskey((prev) => !prev)}
                 style={styles.eyeBtn}
                 hitSlop={8}
+                accessibilityLabel={showPasskey ? 'Hide password' : 'Show password'}
               >
                 <Ionicons
                   name={showPasskey ? 'eye-off-outline' : 'eye-outline'}
@@ -225,48 +271,30 @@ export function UsernameModal({ visible, onSuccess, onClose }: UsernameModalProp
             </View>
           </View>
 
-          {/* Primary Action Button (Get Started / Login) */}
+          {/* Action Button */}
           <Pressable
             style={({ pressed }) => [
               styles.submitBtn,
               pressed && styles.submitBtnPressed,
               loading && styles.submitBtnDisabled,
             ]}
-            onPress={handleLogin}
+            onPress={handleSubmit}
             disabled={loading}
           >
-            {loading && !canCreateUser ? (
-              <ActivityIndicator color={colors.text} size="small" />
+            {loading ? (
+              <ActivityIndicator color="#ffffff" size="small" />
             ) : (
-              <Text style={styles.submitBtnText}>Get Started</Text>
+              <Text style={styles.submitBtnText}>
+                {mode === 'login' ? 'Sign In' : 'Create Account & Sync'}
+              </Text>
             )}
           </Pressable>
 
-          {/* Create User Button - Visible when user doesn't exist */}
-          {canCreateUser && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.createBtn,
-                pressed && styles.createBtnPressed,
-                loading && styles.submitBtnDisabled,
-              ]}
-              onPress={handleRegister}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color={colors.text} size="small" />
-              ) : (
-                <View style={styles.createBtnContent}>
-                  <Ionicons name="person-add-outline" size={18} color={colors.text} />
-                  <Text style={styles.createBtnText}>Create User & Continue</Text>
-                </View>
-              )}
-            </Pressable>
-          )}
-
+          {/* Guest / Offline Action */}
           {onClose && (
             <Pressable style={styles.skipBtn} onPress={onClose} hitSlop={8}>
-              <Text style={styles.skipBtnText}>Continue Offline (Local Only)</Text>
+              <Text style={styles.skipBtnText}>Continue as Guest (Offline Mode)</Text>
+              <Text style={styles.skipBtnSubtext}>You can sync anytime later in Settings</Text>
             </Pressable>
           )}
         </View>
@@ -312,21 +340,68 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     zIndex: 10,
   },
+  header: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 107, 107, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
   title: {
     color: colors.text,
-    fontSize: font.size.xl,
+    fontSize: font.size.lg,
     fontWeight: font.weight.heavy,
-    marginBottom: spacing.xs,
+    marginBottom: 4,
+    textAlign: 'center',
   },
   subtitle: {
     color: colors.textMuted,
+    fontSize: font.size.xs,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 3,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radius.md,
+  },
+  activeTab: {
+    backgroundColor: colors.bgElevated,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabText: {
+    color: colors.textMuted,
     fontSize: font.size.sm,
-    lineHeight: 20,
-    marginBottom: spacing.lg,
+    fontWeight: font.weight.semibold,
+  },
+  activeTabText: {
+    color: colors.text,
+    fontWeight: font.weight.bold,
   },
   errorBox: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.xs,
     backgroundColor: 'rgba(255, 92, 122, 0.15)',
     borderColor: colors.danger,
@@ -335,11 +410,20 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
-  errorText: {
+  errorTextContainer: {
     flex: 1,
+  },
+  errorText: {
     color: colors.danger,
-    fontSize: font.size.sm,
+    fontSize: font.size.xs,
     fontWeight: font.weight.semibold,
+    lineHeight: 18,
+  },
+  switchModeLink: {
+    color: colors.primary,
+    fontSize: font.size.xs,
+    fontWeight: font.weight.bold,
+    marginTop: 4,
   },
   statusBox: {
     flexDirection: 'row',
@@ -390,7 +474,7 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: colors.primary,
     borderRadius: radius.pill,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: spacing.xs,
@@ -402,36 +486,13 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   submitBtnText: {
-    color: colors.text,
-    fontSize: font.size.md,
-    fontWeight: font.weight.bold,
-  },
-  createBtn: {
-    marginTop: spacing.md,
-    backgroundColor: colors.cardAlt,
-    borderColor: colors.primary,
-    borderWidth: 1.5,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createBtnPressed: {
-    backgroundColor: 'rgba(255, 107, 107, 0.15)',
-  },
-  createBtnContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  createBtnText: {
-    color: colors.text,
+    color: '#ffffff',
     fontSize: font.size.md,
     fontWeight: font.weight.bold,
   },
   skipBtn: {
     marginTop: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -439,6 +500,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: font.size.xs,
     fontWeight: font.weight.semibold,
-    textDecorationLine: 'underline',
+  },
+  skipBtnSubtext: {
+    color: colors.textFaint,
+    fontSize: 10,
+    marginTop: 2,
   },
 });

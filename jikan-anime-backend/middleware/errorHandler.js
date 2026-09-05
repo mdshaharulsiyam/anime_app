@@ -11,8 +11,21 @@ export const notFound = (req, res, next) => {
  * Global Centralized Error Handler Middleware
  */
 export const errorHandler = (err, req, res, next) => {
-  let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  // If headers were already sent, delegate to default Express handler
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  let statusCode = res.statusCode && res.statusCode !== 200 ? res.statusCode : 500;
   let message = err.message || 'Internal Server Error';
+
+  // Body parser / JSON SyntaxError (e.g. malformed JSON in request body)
+  if (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Malformed JSON payload in request body',
+    });
+  }
 
   // Mongoose Bad ObjectId (CastError)
   if (err.name === 'CastError' && err.kind === 'ObjectId') {
@@ -20,7 +33,7 @@ export const errorHandler = (err, req, res, next) => {
     message = 'Resource not found / Invalid ID format';
   }
 
-  // Mongoose Duplicate Key Error
+  // Mongoose Duplicate Key Error (E11000)
   if (err.code === 11000) {
     statusCode = 400;
     const field = Object.keys(err.keyValue || {})[0] || 'field';
@@ -30,14 +43,19 @@ export const errorHandler = (err, req, res, next) => {
   // Mongoose Validation Error
   if (err.name === 'ValidationError') {
     statusCode = 400;
-    message = Object.values(err.errors)
+    message = Object.values(err.errors || {})
       .map((val) => val.message)
       .join(', ');
+  }
+
+  // Ensure message is string
+  if (typeof message !== 'string') {
+    message = 'An unexpected server error occurred';
   }
 
   res.status(statusCode).json({
     success: false,
     message,
-    stack: process.env.NODE_ENV === 'production' ? null : err.stack,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
   });
 };
